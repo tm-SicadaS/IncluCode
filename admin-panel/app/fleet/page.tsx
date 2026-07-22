@@ -72,11 +72,23 @@ export default function FleetPage() {
               {activeTrips && Object.keys(activeTrips).length > 0 ? (
                 Object.entries(activeTrips).map(([tripId, data]: [string, any]) => (
                   <div key={tripId} className="bg-gray-50 border border-gray-100 p-3 rounded-lg text-sm">
-                    <p className="font-semibold text-gray-800 mb-1">{data.routeName || `Trip: ${tripId}`}</p>
-                    <div className="flex justify-between text-gray-500 font-mono text-xs mt-2">
-                      <span>Lat: {data.latitude?.toFixed(4) || "N/A"}</span>
-                      <span>Lng: {data.longitude?.toFixed(4) || "N/A"}</span>
+                    <div className="flex justify-between items-start mb-1">
+                      <p className="font-semibold text-gray-800">{data.routeName || `Trip: ${tripId}`}</p>
+                      {data.busNumber && (
+                        <span className="text-xs bg-indigo-100 text-indigo-700 font-mono px-2 py-0.5 rounded-full">
+                          {data.busNumber}
+                        </span>
+                      )}
                     </div>
+                    <div className="flex justify-between text-gray-500 font-mono text-xs mt-2">
+                      <span>Lat: {data.lat?.toFixed(4) ?? "N/A"}</span>
+                      <span>Lng: {data.lng?.toFixed(4) ?? "N/A"}</span>
+                    </div>
+                    {data.bleUuid && (
+                      <p className="text-gray-400 font-mono text-xs mt-1 truncate" title={data.bleUuid}>
+                        BLE: {data.bleUuid}
+                      </p>
+                    )}
                   </div>
                 ))
               ) : (
