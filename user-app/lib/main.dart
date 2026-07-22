@@ -4,22 +4,26 @@ import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
+import 'firebase_options.dart';
 
-// ─── Shared BLE contract — must match conductor-app and admin-panel routes ──
-const List<String> _kKnownBusUuids = [
-  '12345678-1234-1234-1234-123456789abc',
-  // Add additional route BLE UUIDs here as they are created in the admin panel
-];
+// ─── Dynamic BLE Contract ──
+// We no longer hardcode UUIDs. We listen to Firebase RTDB 'active_trips'
+// to know EXACTLY which buses are currently on the road!
 
 // Minimum RSSI (signal strength) to trigger announcement.
-// -80 dBm ≈ about 5-10 metres. Lower the number = require closer proximity.
-const int _kRssiThreshold = -80;
+// -95 dBm = very weak signal, ensuring we pick it up even if phones are far or antennas are weak.
+const int _kRssiThreshold = -95;
 
 // How long (seconds) to pause scanning after a detection to avoid repeat speech.
 const int _kCooldownSeconds = 15;
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   // Force portrait — better for accessibility / screen reader navigation.
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const BuscueUserApp());
@@ -64,8 +68,14 @@ class _BusScannerPageState extends State<BusScannerPage>
 
   // ── Services ──────────────────────────────────────────────────────────────
   final FlutterTts _tts = FlutterTts();
+  final DatabaseReference _rtdb = FirebaseDatabase.instance.ref();
   StreamSubscription<List<ScanResult>>? _scanSub;
+  StreamSubscription<bool>? _isScanningSub;
+  StreamSubscription<DatabaseEvent>? _rtdbSub;
   Timer? _cooldownTimer;
+
+  // Key: bleUuid, Value: {'routeName': '...', 'busNumber': '...'}
+  final Map<String, Map<String, String>> _liveBuses = {};
 
   // ─────────────────────────────────────────────────────────────────────────
   @override
@@ -73,13 +83,47 @@ class _BusScannerPageState extends State<BusScannerPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initTts();
+    
+    // Listen to scanning state to restart it when it times out.
+    _isScanningSub = FlutterBluePlus.isScanning.listen((scanning) {
+      if (!scanning && !_isCoolingDown && mounted) {
+        Future.delayed(const Duration(seconds: 2), _startScan);
+      }
+    });
+
+    _listenToLiveBuses();
     _requestPermissionsAndScan();
+  }
+
+  void _listenToLiveBuses() {
+    _rtdbSub = _rtdb.child('active_trips').onValue.listen((event) {
+      if (!mounted) return;
+      _liveBuses.clear();
+      final data = event.snapshot.value as Map<dynamic, dynamic>?;
+      if (data != null) {
+        data.forEach((key, value) {
+          final trip = value as Map<dynamic, dynamic>;
+          final uuid = trip['bleUuid']?.toString().toLowerCase() ?? '';
+          final routeName = trip['routeName']?.toString() ?? '';
+          final busNumber = trip['busNumber']?.toString() ?? '';
+          if (uuid.isNotEmpty) {
+            _liveBuses[uuid] = {
+              'routeName': routeName,
+              'busNumber': busNumber,
+            };
+          }
+        });
+      }
+      debugPrint('Live buses updated from RTDB: ${_liveBuses.length} active.');
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _scanSub?.cancel();
+    _isScanningSub?.cancel();
+    _rtdbSub?.cancel();
     _cooldownTimer?.cancel();
     FlutterBluePlus.stopScan();
     _tts.stop();
@@ -166,14 +210,8 @@ class _BusScannerPageState extends State<BusScannerPage>
       continuousUpdates: true,
     );
 
+    _scanSub?.cancel();
     _scanSub = FlutterBluePlus.scanResults.listen(_onScanResults);
-
-    // Restart scan automatically when it times out.
-    FlutterBluePlus.isScanning.listen((scanning) {
-      if (!scanning && !_isCoolingDown && mounted) {
-        Future.delayed(const Duration(seconds: 2), _startScan);
-      }
-    });
   }
 
   void _stopScan() {
@@ -194,38 +232,62 @@ class _BusScannerPageState extends State<BusScannerPage>
           .map((u) => u.toString().toLowerCase())
           .toList();
 
-      final matchedUuid = _kKnownBusUuids.firstWhere(
-        (known) => advertisedUuids.contains(known.toLowerCase()),
-        orElse: () => '',
-      );
+      if (advertisedUuids.isNotEmpty) {
+        debugPrint('Found BLE Device: ${result.device.remoteId} | RSSI: ${result.rssi} | UUIDs: $advertisedUuids');
+      }
+
+      // Check if any of the advertised UUIDs match a LIVE bus on the road
+      String matchedUuid = '';
+      String routeName = '';
+      String busNumber = '';
+
+      for (final advertised in advertisedUuids) {
+        if (_liveBuses.containsKey(advertised)) {
+          matchedUuid = advertised;
+          routeName = _liveBuses[advertised]!['routeName'] ?? '';
+          busNumber = _liveBuses[advertised]!['busNumber'] ?? '';
+          break;
+        }
+      }
 
       if (matchedUuid.isNotEmpty) {
-        // Pass the human-readable local name if advertised, else fall back to UUID
+        // Pass the live routeName from RTDB as the label
         final localName = result.advertisementData.advName;
-        final label = localName.isNotEmpty ? localName : matchedUuid;
-        _onBusDetected(matchedUuid, label: label);
+        final label = localName.isNotEmpty ? localName : routeName;
+        _onBusDetected(matchedUuid, routeName: label, busNumber: busNumber);
         return;
       }
     }
   }
 
-  void _onBusDetected(String uuid, {String? label}) {
+  void _onBusDetected(String uuid, {String? routeName, String? busNumber}) {
     if (_isCoolingDown) return;
     _stopScan();
 
     final shortId = uuid.length > 8 ? uuid.substring(0, 8) : uuid;
-    final displayName = (label != null && label.isNotEmpty) ? label : shortId;
+    final rName = (routeName != null && routeName.isNotEmpty) ? routeName : shortId;
+    final bNum = (busNumber != null && busNumber.isNotEmpty) ? busNumber : '';
+
+    final busInfoText = bNum.isNotEmpty ? '$rName (Bus $bNum)' : rName;
 
     setState(() {
       _busDetected = true;
       _isCoolingDown = true;
-      _statusText = 'Bus Arrived!\n$displayName';
+      _statusText = 'Bus Arrived!\n$busInfoText';
     });
 
     if (_isMalayalam) {
-      _speak('$displayName ബസ്സ് അടുത്തു എത്തുന്നു.');
+      if (bNum.isNotEmpty) {
+        _speak('$rName റൂട്ടിലെ $bNum നമ്പർ ബസ്സ് അടുത്തു എത്തുന്നു.');
+      } else {
+        _speak('$rName ബസ്സ് അടുത്തു എത്തുന്നു.');
+      }
     } else {
-      _speak('$displayName is approaching.');
+      if (bNum.isNotEmpty) {
+        _speak('Bus $bNum on route $rName is approaching.');
+      } else {
+        _speak('$rName is approaching.');
+      }
     }
 
     // Resume scanning after cooldown.
@@ -259,11 +321,11 @@ class _BusScannerPageState extends State<BusScannerPage>
         behavior: HitTestBehavior.opaque,
         onTap: _onTap,
         onLongPress: () {
-          // Demo trigger: Simulate bus arrival for single-phone testing!
-          _onBusDetected(
-            '12345678-1234-1234-1234-123456789abc',
-            label: 'Route 104 - Express',
-          );
+            _onBusDetected(
+              '12345678-1234-1234-1234-123456789abc',
+              routeName: 'Route 104 - Express',
+              busNumber: '4676',
+            );
         },
         child: SafeArea(
           child: Padding(

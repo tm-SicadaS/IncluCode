@@ -3,6 +3,8 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  firebase_core
+  firebase_database
   flutter_blue_plus_winrt
   flutter_tts
   permission_handler_windows
