@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'primary_button.dart';
 import 'onboarding_step1_screen.dart';
+import 'onboarding_step3_screen.dart';
 import 'sign_in_screen.dart';
+import 'data/app_session.dart';
 
 /// Screen 1 — Launch Screen
 /// Dark green brand splash with app mark, tagline, and entry points.
@@ -54,10 +56,11 @@ class LaunchScreen extends StatelessWidget {
                 label: 'Get Started',
                 backgroundColor: Colors.white.withValues(alpha: 0.12),
                 onPressed: () {
+                  final nextScreen = AppSession.instance.hasConductor
+                      ? const OnboardingStep3Screen()
+                      : const OnboardingStep1Screen();
                   Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const OnboardingStep1Screen(),
-                    ),
+                    MaterialPageRoute(builder: (_) => nextScreen),
                   );
                 },
               ),

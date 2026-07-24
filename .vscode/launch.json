@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run BusCue Conductor UI",
+      "request": "launch",
+      "type": "dart",
+      "program": "${workspaceFolder}/buscue_conductor/lib/main.dart",
+      "cwd": "${workspaceFolder}/buscue_conductor"
+    }
+  ]
+}

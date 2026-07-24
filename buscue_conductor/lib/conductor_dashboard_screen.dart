@@ -39,6 +39,8 @@ class _ConductorDashboardScreenState extends State<ConductorDashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _statusCard(),
+              const SizedBox(height: 16),
+              _conductorCard(),
               const SizedBox(height: 28),
               const Text('Selected route', style: AppTextStyles.fieldLabel),
               const SizedBox(height: 8),
@@ -80,6 +82,43 @@ class _ConductorDashboardScreenState extends State<ConductorDashboardScreen> {
         child: Text(_session.currentTrip == null
             ? 'No route selected'
             : '${_session.currentTrip!.route.name}\n${_session.currentTrip!.busNumber}'),
+      );
+
+  Widget _conductorCard() => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.inputBorder),
+        ),
+        child: Row(
+          children: [
+            const CircleAvatar(
+              backgroundColor: AppColors.deepGreen,
+              foregroundColor: Colors.white,
+              child: Icon(Icons.person_outline),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('CONDUCTOR', style: AppTextStyles.sectionLabel),
+                  Text(
+                    _session.conductor?.name ?? 'Conductor profile not set',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    _session.conductor == null
+                        ? 'Set up your profile once to save it.'
+                        : '${_session.conductor!.phone}${_session.conductor!.badgeNumber == null ? '' : ' • ${_session.conductor!.badgeNumber}'}',
+                    style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       );
 
   Widget _statusCard() => Container(

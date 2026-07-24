@@ -34,6 +34,14 @@ class AppSession {
 
   final List<StaffMember> staff = [];
   TripDraft? currentTrip;
+  StaffMember? conductor;
+
+  bool get hasConductor => conductor != null;
+
+  void saveConductor(StaffMember member) {
+    conductor = member;
+    saveStaff([member]);
+  }
 
   void addRoute(BusRoute route) => routes.add(route);
 

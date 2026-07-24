@@ -8,10 +8,9 @@ import 'launch_screen.dart';
 /// -----------------------------------------------------------------------
 /// Base build matching the wireframe flow:
 ///   1. Launch Screen        -> lib/screens/launch_screen.dart
-///   2. Step 1 of 3 (Profile) -> lib/screens/onboarding_step1_screen.dart
-///   3. Step 2 of 3 (Bus/Team)-> lib/screens/onboarding_step2_screen.dart
-///   4. Step 3 of 3 (Route)   -> lib/screens/onboarding_step3_screen.dart
-///   5. Conductor Dashboard   -> lib/screens/conductor_dashboard_screen.dart
+///   2. Step 1 of 2 (Conductor profile) -> onboarding_step1_screen.dart
+///   3. Step 2 of 2 (Bus number and route) -> onboarding_step3_screen.dart
+///   4. Conductor Dashboard -> conductor_dashboard_screen.dart
 ///
 /// Shared colors/text styles live in lib/theme/app_theme.dart, and
 /// reusable form pieces live in lib/widgets/. Navigation is done with

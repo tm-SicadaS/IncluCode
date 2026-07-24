@@ -10,10 +10,7 @@ import 'services/location_service.dart';
 /// The driver manually selects an approved route, while location is detected
 /// directly from the phone. Firestore will replace the temporary route list.
 class OnboardingStep3Screen extends StatefulWidget {
-  const OnboardingStep3Screen({super.key, required this.busNumber, required this.shift});
-
-  final String busNumber;
-  final String shift;
+  const OnboardingStep3Screen({super.key});
 
   @override
   State<OnboardingStep3Screen> createState() => _OnboardingStep3ScreenState();
@@ -22,9 +19,16 @@ class OnboardingStep3Screen extends StatefulWidget {
 class _OnboardingStep3ScreenState extends State<OnboardingStep3Screen> {
   final _session = AppSession.instance;
   final _locationService = const LocationService();
+  final _busNumberController = TextEditingController();
   late BusRoute _route = _session.routes.first;
   LocationPosition? _currentPosition;
   bool _isLocating = false;
+
+  @override
+  void dispose() {
+    _busNumberController.dispose();
+    super.dispose();
+  }
 
   Future<void> _detectLocation() async {
     setState(() => _isLocating = true);
@@ -56,16 +60,16 @@ class _OnboardingStep3ScreenState extends State<OnboardingStep3Screen> {
   }
 
   void _confirm() {
-    if (widget.busNumber.isEmpty) {
+    if (_busNumberController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter the bus number in the previous step.')),
+        const SnackBar(content: Text('Enter the bus number for this trip.')),
       );
       return;
     }
     _session.currentTrip = TripDraft(
       route: _route,
-      busNumber: widget.busNumber,
-      shift: widget.shift,
+      busNumber: _busNumberController.text.trim(),
+      shift: 'Current trip',
     );
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const ConductorDashboardScreen()),
@@ -95,9 +99,9 @@ class _OnboardingStep3ScreenState extends State<OnboardingStep3Screen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Set Your Route', style: AppTextStyles.screenTitle),
+                      Text('Set Up This Trip', style: AppTextStyles.screenTitle),
                       SizedBox(height: 4),
-                      Text('STEP 3 OF 3', style: AppTextStyles.stepLabel),
+                      Text('STEP 2 OF 2', style: AppTextStyles.stepLabel),
                     ],
                   ),
                 ),
@@ -107,6 +111,21 @@ class _OnboardingStep3ScreenState extends State<OnboardingStep3Screen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        const Text(
+                          'Bus number for this trip',
+                          style: AppTextStyles.fieldLabel,
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _busNumberController,
+                          textCapitalization: TextCapitalization.characters,
+                          onChanged: (_) => setState(() {}),
+                          decoration: AppTheme.inputDecoration(
+                            hint: 'KL 08 AB 1234',
+                            prefixIcon: const Icon(Icons.directions_bus_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
                         const Text(
                           'Select the route for this trip',
                           style: AppTextStyles.fieldLabel,
@@ -250,7 +269,9 @@ class _OnboardingStep3ScreenState extends State<OnboardingStep3Screen> {
                 children: [
                   const Text('Trip setup', style: TextStyle(fontWeight: FontWeight.w600)),
                   Text(
-                    '${widget.busNumber} • ${widget.shift}',
+                    _busNumberController.text.trim().isEmpty
+                        ? 'Enter the current bus number above.'
+                        : _busNumberController.text.trim(),
                     style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
                   ),
                 ],

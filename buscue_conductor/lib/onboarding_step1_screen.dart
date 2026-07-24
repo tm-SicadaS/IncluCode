@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'app_text_field.dart';
 import 'primary_button.dart';
-import 'onboarding_step2_screen.dart';
+import 'onboarding_step3_screen.dart';
 import 'data/app_session.dart';
 import 'models/app_models.dart';
 
@@ -18,17 +18,13 @@ class OnboardingStep1Screen extends StatefulWidget {
 class _OnboardingStep1ScreenState extends State<OnboardingStep1Screen> {
   final _fullNameController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _emailController = TextEditingController();
   final _conductorIdController = TextEditingController();
-  final _vehicleRegController = TextEditingController();
 
   @override
   void dispose() {
     _fullNameController.dispose();
     _phoneController.dispose();
-    _emailController.dispose();
     _conductorIdController.dispose();
-    _vehicleRegController.dispose();
     super.dispose();
   }
 
@@ -40,7 +36,7 @@ class _OnboardingStep1ScreenState extends State<OnboardingStep1Screen> {
       );
       return;
     }
-    AppSession.instance.saveStaff([
+    AppSession.instance.saveConductor(
       StaffMember(
         id: _conductorIdController.text.trim().isEmpty
             ? _phoneController.text.trim()
@@ -52,9 +48,9 @@ class _OnboardingStep1ScreenState extends State<OnboardingStep1Screen> {
             ? null
             : _conductorIdController.text.trim(),
       ),
-    ]);
+    );
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const OnboardingStep2Screen()),
+      MaterialPageRoute(builder: (_) => const OnboardingStep3Screen()),
     );
   }
 
@@ -82,10 +78,10 @@ class _OnboardingStep1ScreenState extends State<OnboardingStep1Screen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Set Up Your Profile',
+                    Text('Conductor Details',
                         style: AppTextStyles.screenTitle),
                     SizedBox(height: 4),
-                    Text('STEP 1 OF 3', style: AppTextStyles.stepLabel),
+                    Text('STEP 1 OF 2', style: AppTextStyles.stepLabel),
                   ],
                 ),
               ),
@@ -112,25 +108,15 @@ class _OnboardingStep1ScreenState extends State<OnboardingStep1Screen> {
                       ),
                       const SizedBox(height: 16),
                       AppTextField(
-                        label: 'Email Address (Optional)',
-                        hint: 'ramesh@example.com',
-                        icon: Icons.mail_outline,
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                      ),
-                      const SizedBox(height: 16),
-                      AppTextField(
                         label: 'Conductor ID / Badge No.',
                         hint: 'KL-CND-2023-884',
                         icon: Icons.badge_outlined,
                         controller: _conductorIdController,
                       ),
-                      const SizedBox(height: 16),
-                      AppTextField(
-                        label: 'Vehicle Registration No.',
-                        hint: 'KL 08 AB 1234',
-                        icon: Icons.directions_bus_outlined,
-                        controller: _vehicleRegController,
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Your details are saved on this device. You will enter the bus number for each trip on the next screen.',
+                        style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                       ),
                     ],
                   ),
