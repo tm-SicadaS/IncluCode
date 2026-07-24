@@ -26,7 +26,10 @@ class MyTaskHandler extends TaskHandler {
 }
 
 class ConductorScreen extends StatefulWidget {
-  const ConductorScreen({super.key});
+  final String? initialRouteId;
+  final String? initialBusNumber;
+
+  const ConductorScreen({super.key, this.initialRouteId, this.initialBusNumber});
 
   @override
   State<ConductorScreen> createState() => _ConductorScreenState();
@@ -40,6 +43,9 @@ class _ConductorScreenState extends State<ConductorScreen> {
   List<RouteModel> _routes = [];
   RouteModel? _selectedRoute;
   final TextEditingController _busNumberController = TextEditingController();
+  final TextEditingController _conductorNameController = TextEditingController();
+  final TextEditingController _conductorPhoneController = TextEditingController();
+  final TextEditingController _conductorBadgeController = TextEditingController();
   
   bool _isTripActive = false;
   StreamSubscription<Position>? _positionStream;
@@ -52,7 +58,28 @@ class _ConductorScreenState extends State<ConductorScreen> {
     _initForegroundTask();
     _requestPermissions();
     _fetchRoutes();
+    _loadConductorProfile();
     _testRtdbWrite(); // Debug: verify RTDB write permission on startup
+  }
+  
+  Future<void> _loadConductorProfile() async {
+    try {
+      final snapshot = await _firestore
+          .collection('conductors')
+          .doc(_conductorId)
+          .get();
+
+      final data = snapshot.data();
+      if (data == null || !mounted) return;
+
+      setState(() {
+        _conductorNameController.text = data['name'] as String? ?? '';
+        _conductorPhoneController.text = data['phone'] as String? ?? '';
+        _conductorBadgeController.text = data['badge'] as String? ?? '';
+      });
+    } catch (e) {
+      debugPrint('Could not load conductor profile: $e');
+    }
   }
 
   /// Writes a test node to RTDB to confirm rules allow unauthenticated writes.
@@ -112,7 +139,16 @@ class _ConductorScreenState extends State<ConductorScreen> {
       final routes = snapshot.docs.map((doc) => RouteModel.fromMap(doc.id, doc.data())).toList();
       setState(() {
         _routes = routes;
-        if (_routes.isNotEmpty) _selectedRoute = _routes.first;
+        if (_routes.isNotEmpty) {
+          if (widget.initialRouteId != null) {
+            _selectedRoute = _routes.firstWhere((r) => r.id == widget.initialRouteId, orElse: () => _routes.first);
+          } else {
+            _selectedRoute = _routes.first;
+          }
+        }
+        if (widget.initialBusNumber != null) {
+          _busNumberController.text = widget.initialBusNumber!;
+        }
       });
     } catch (e) {
       debugPrint('Firestore fetch error: $e');
@@ -120,11 +156,29 @@ class _ConductorScreenState extends State<ConductorScreen> {
   }
 
   Future<void> _startTrip() async {
-    if (_selectedRoute == null || _busNumberController.text.isEmpty) {
+    if (_conductorNameController.text.trim().isEmpty ||
+        _conductorPhoneController.text.trim().isEmpty ||
+        _selectedRoute == null ||
+        _busNumberController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a route and enter bus number')),
+        const SnackBar(
+          content: Text(
+            'Enter conductor details, select a route, and enter a bus number',
+          ),
+        ),
       );
       return;
+    }
+
+    try {
+      await _firestore.collection('conductors').doc(_conductorId).set({
+        'name': _conductorNameController.text.trim(),
+        'phone': _conductorPhoneController.text.trim(),
+        'badge': _conductorBadgeController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Could not save conductor profile: $e');
     }
 
     setState(() => _isTripActive = true);
@@ -149,6 +203,9 @@ class _ConductorScreenState extends State<ConductorScreen> {
         'route': _selectedRoute!.id,
         'routeName': _selectedRoute!.routeName,
         'busNumber': _busNumberController.text,
+        'conductorName': _conductorNameController.text.trim(),
+        'conductorPhone': _conductorPhoneController.text.trim(),
+        'conductorBadge': _conductorBadgeController.text.trim(),
         'bleUuid': _selectedRoute!.bleUuid,
         'timestamp': ServerValue.timestamp,
       }).catchError((e) => debugPrint('RTDB write error: $e'));
@@ -173,7 +230,7 @@ class _ConductorScreenState extends State<ConductorScreen> {
         writeToRtdb(pos.latitude, pos.longitude);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('GPS Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('GPS Error: $e')));
     }
 
     // 2b. Start continuous GPS stream for live updates
@@ -193,18 +250,18 @@ class _ConductorScreenState extends State<ConductorScreen> {
           writeToRtdb(position.latitude, position.longitude);
         },
         onError: (e) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Stream Error: $e')));
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Stream Error: $e')));
         },
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Init Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Init Error: $e')));
     }
 
     // 3. Start BLE Beacon
     try {
       await _blePeripheral.start(advertiseData: AdvertiseData(serviceUuid: _selectedRoute!.bleUuid));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('BLE Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('BLE Error: $e')));
     }
   }
 
@@ -212,6 +269,8 @@ class _ConductorScreenState extends State<ConductorScreen> {
     setState(() {
       _isTripActive = false;
       _currentPosition = null;
+      _selectedRoute = null;
+      _busNumberController.clear();
     });
 
     // 1. Stop GPS Stream
@@ -230,6 +289,9 @@ class _ConductorScreenState extends State<ConductorScreen> {
   @override
   void dispose() {
     _busNumberController.dispose();
+    _conductorNameController.dispose();
+    _conductorPhoneController.dispose();
+    _conductorBadgeController.dispose();
     _endTrip();
     super.dispose();
   }
@@ -238,17 +300,55 @@ class _ConductorScreenState extends State<ConductorScreen> {
   Widget build(BuildContext context) {
     return WithForegroundTask(
       child: Scaffold(
-        backgroundColor: const Color(0xFFF5F0E8),
+        backgroundColor: const Color(0xFFF7F5F0),
         appBar: AppBar(
           title: const Text('Buscue Conductor'),
-          backgroundColor: const Color(0xFF1B4332),
+          backgroundColor: const Color(0xFF1B3A34),
           foregroundColor: Colors.white,
         ),
-        body: Padding(
+        body: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Conductor Details',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _conductorNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Conductor name',
+                    ),
+                  ),
+                  TextField(
+                    controller: _conductorPhoneController,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Phone number',
+                    ),
+                  ),
+                  TextField(
+                    controller: _conductorBadgeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Badge / employee ID (optional)',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
               Card(
                 color: Colors.white,
                 child: Padding(
@@ -256,7 +356,7 @@ class _ConductorScreenState extends State<ConductorScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Select Route', style: TextStyle(color: Color(0xFF1B4332), fontWeight: FontWeight.bold)),
+                      const Text('Select Route', style: TextStyle(color: Color(0xFF1B3A34), fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       DropdownButton<RouteModel>(
                         isExpanded: true,
@@ -279,7 +379,7 @@ class _ConductorScreenState extends State<ConductorScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Bus Number', style: TextStyle(color: Color(0xFF1B4332), fontWeight: FontWeight.bold)),
+                      const Text('Bus Number', style: TextStyle(color: Color(0xFF1B3A34), fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       TextField(
                         controller: _busNumberController,
@@ -297,7 +397,7 @@ class _ConductorScreenState extends State<ConductorScreen> {
               const SizedBox(height: 16),
               if (_isTripActive)
                 Card(
-                  color: const Color(0xFF1B4332),
+                  color: const Color(0xFF3F7A5E),
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
@@ -305,6 +405,16 @@ class _ConductorScreenState extends State<ConductorScreen> {
                       children: [
                         const Text('TRIP ACTIVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                         const SizedBox(height: 8),
+                        Text(
+                          'Conductor: ${_conductorNameController.text}',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Phone: ${_conductorPhoneController.text}',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                        const SizedBox(height: 4),
                         Text('BLE UUID: ${_selectedRoute?.bleUuid}', style: const TextStyle(color: Colors.white70)),
                         const SizedBox(height: 4),
                         Text(
@@ -315,10 +425,10 @@ class _ConductorScreenState extends State<ConductorScreen> {
                     ),
                   ),
                 ),
-              const Spacer(),
+              const SizedBox(height: 24),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _isTripActive ? const Color(0xFFE53935) : const Color(0xFFF5A623),
+                  backgroundColor: _isTripActive ? const Color(0xFFE53935) : const Color(0xFFE8A33D),
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
